@@ -1,0 +1,11 @@
+{
+  "name": "costs",
+  "version": "0.1",
+  "module": "plugins.costs",
+  "depends_on": [
+    "shared"
+  ],
+  "init_after": [
+    "scheduling"
+  ]
+}
