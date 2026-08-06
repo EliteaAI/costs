@@ -94,7 +94,7 @@ class Module(module.ModuleModel):
                 "rpc_func": "costs_refresh_catalog",
                 "rpc_kwargs": {},
                 "name": "costs_refresh_model_prices",
-                "cron": "17 3 * * *",
+                "cron": "0 8 * * *",
                 "active": True,
             })
         except Empty:
