@@ -31,7 +31,11 @@ def register_defaults() -> None:
     from .litellm import LiteLLMSource
     from .bundled import BundledSource
     from .upload import UploadSource
+    from .azure_foundry import AzureFoundrySource
+    from .bedrock import BedrockSource
 
     register(LiteLLMSource())
     register(BundledSource())
     register(UploadSource())
+    register(AzureFoundrySource())
+    register(BedrockSource())

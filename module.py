@@ -51,7 +51,7 @@ class Module(module.ModuleModel):
 
     @staticmethod
     def _register_permissions():
-        for action in ("view", "create", "edit", "delete"):
+        for action in ("view", "create", "edit", "delete", "reimport"):
             auth.register_permissions({
                 "permissions": [f"configuration.model_prices.prices.{action}"],
                 "recommended_roles": {

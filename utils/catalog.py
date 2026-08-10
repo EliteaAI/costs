@@ -69,6 +69,39 @@ def upsert_entries(entries: list, source_id: str) -> dict:
     return counts
 
 
+def replace_entries(entries: list, source_id: str) -> dict:
+    """Destructive re-import: wipe ALL rows and bulk-insert fresh ones.
+
+    Deletes every row (including admin custom overrides) and inserts the given
+    canonical entries as non-custom rows, in one transaction. The caller MUST
+    pass a non-empty, already-fetched list — this never fetches and never leaves
+    the table empty on an empty input. Returns {deleted, inserted}.
+    """
+    from tools import db
+    from ..models.model_price import ModelPrice
+
+    if not entries:
+        raise ValueError("replace_entries requires a non-empty entries list")
+
+    inserted = 0
+    with db.with_project_schema_session(None) as session:
+        deleted = session.query(ModelPrice).delete()
+        seen = set()
+        for entry in entries:
+            if not entry.model_name or entry.model_name in seen:
+                continue
+            seen.add(entry.model_name)
+            row = ModelPrice(model_name=entry.model_name, is_custom=False)
+            _apply_import_fields(row, entry, source_id)
+            row.base_snapshot = snapshot_from_entry(entry)
+            session.add(row)
+            inserted += 1
+        session.commit()
+    counts = {"deleted": deleted, "inserted": inserted}
+    log.info("costs.catalog: replace from %r -> %s", source_id, counts)
+    return counts
+
+
 def set_custom_price(model_name: str, values: dict):
     """Create or overwrite a custom (admin) price for a model.
 

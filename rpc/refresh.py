@@ -9,13 +9,13 @@ air-gapped deployment still refreshes from a known-good snapshot.
 from pylon.core.tools import web, log
 
 from ..sources import registry
-from ..utils import cache, catalog
+from ..utils import cache, catalog, settings
 
 
 class RPC:
     @web.rpc("costs_refresh_catalog", "refresh_catalog")
     def refresh_catalog(self, source_id: str = None, **kwargs) -> dict:
-        source_id = source_id or registry.DEFAULT_SOURCE_ID
+        source_id = source_id or settings.get_active_source()
         source = registry.get(source_id)
 
         entries = []
@@ -42,4 +42,32 @@ class RPC:
         cache.reload()
         result = {"source": used, "counts": counts, "cached": cache.count()}
         log.info("costs.refresh: done %s", result)
+        return result
+
+    @web.rpc("costs_reimport_catalog", "reimport_catalog")
+    def reimport_catalog(self, source_id: str = None, **kwargs) -> dict:
+        """Destructive re-import: fetch first, then wipe+replace the whole table.
+
+        Aborts (no wipe) if the source is unknown or returns no entries, so a
+        failed fetch can never empty the catalog.
+        """
+        source_id = source_id or settings.get_active_source()
+        source = registry.get(source_id)
+        if source is None:
+            return {"error": "unknown_source", "source": source_id, "cached": cache.count()}
+
+        try:
+            entries = source.fetch()
+        except Exception as e:  # pylint: disable=W0703
+            log.warning("costs.reimport: source %r failed: %s", source_id, e)
+            return {"error": "fetch_failed", "source": source_id, "cached": cache.count()}
+
+        if not entries:
+            log.error("costs.reimport: source %r returned no entries; aborting wipe", source_id)
+            return {"error": "empty_fetch", "source": source_id, "cached": cache.count()}
+
+        counts = catalog.replace_entries(entries, source_id)
+        cache.reload()
+        result = {"source": source_id, "counts": counts, "cached": cache.count()}
+        log.info("costs.reimport: done %s", result)
         return result
