@@ -23,7 +23,7 @@ from pylon.core.tools import log
 
 from .base import CanonicalEntry
 
-SOURCE_ID = "AWS Bedrock"
+SOURCE_ID = "bedrock"
 
 _REGION = "us-east-1"
 _URL = (
