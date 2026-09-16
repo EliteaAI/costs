@@ -20,8 +20,11 @@ class RPC:
     def compute_llm_cost(self, model_name, input_tokens, output_tokens,
                          cache_read_input_tokens=0,
                          cache_creation_input_tokens=0, **kwargs):
-        cost, tag = pricing.compute_llm_cost(
+        # `breakdown` is additive: it carries the four components `cost` is the sum of, for a
+        # caller that stores the split alongside the total instead of re-deriving it from the
+        # catalog later. Callers that only read `cost`/`cost_source` are unaffected.
+        cost, tag, breakdown = pricing.compute_llm_cost_breakdown(
             model_name, input_tokens, output_tokens,
             cache_read_input_tokens, cache_creation_input_tokens,
         )
-        return {"cost": cost, "cost_source": tag}
+        return {"cost": cost, "cost_source": tag, "breakdown": breakdown}

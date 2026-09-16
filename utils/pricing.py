@@ -14,17 +14,35 @@ def compute_llm_cost(model_name, input_tokens, output_tokens,
 
     Returns (cost_usd, cost_source_tag) or (None, None) if the model is unpriced.
     """
+    cost, tag, _ = compute_llm_cost_breakdown(
+        model_name, input_tokens, output_tokens,
+        cache_read_input_tokens, cache_creation_input_tokens,
+    )
+    return cost, tag
+
+
+def compute_llm_cost_breakdown(model_name, input_tokens, output_tokens,
+                               cache_read_input_tokens=0,
+                               cache_creation_input_tokens=0):
+    """As compute_llm_cost, plus the per-component split the total is made of.
+
+    Returns (cost_usd, cost_source_tag, breakdown) or (None, None, {}) if the model is
+    unpriced. The breakdown's four values always sum to cost_usd, and they are produced here
+    rather than by a caller multiplying rates itself, so that the cache-price fallbacks below
+    apply to the parts and the total identically. A caller that persists the split is then
+    holding the price that was actually charged, and no later catalog edit can move it.
+    """
     if not model_name or (not input_tokens and not output_tokens):
-        return None, None
+        return None, None, {}
 
     entry = cache.get_price(model_name)
     if not entry:
-        return None, None
+        return None, None, {}
 
     input_price = entry.get("input_cost_per_token")
     output_price = entry.get("output_cost_per_token")
     if input_price is None and output_price is None:
-        return None, None
+        return None, None, {}
 
     input_price = input_price or 0.0
     output_price = output_price or 0.0
@@ -35,10 +53,10 @@ def compute_llm_cost(model_name, input_tokens, output_tokens,
     if cache_create_price is None:
         cache_create_price = input_price
 
-    cost = (
-        (input_tokens or 0) * input_price
-        + (output_tokens or 0) * output_price
-        + (cache_read_input_tokens or 0) * cache_read_price
-        + (cache_creation_input_tokens or 0) * cache_create_price
-    )
-    return cost, _COST_SOURCE_TAG
+    breakdown = {
+        "input_cost": (input_tokens or 0) * input_price,
+        "output_cost": (output_tokens or 0) * output_price,
+        "cache_read_cost": (cache_read_input_tokens or 0) * cache_read_price,
+        "cache_creation_cost": (cache_creation_input_tokens or 0) * cache_create_price,
+    }
+    return sum(breakdown.values()), _COST_SOURCE_TAG, breakdown
