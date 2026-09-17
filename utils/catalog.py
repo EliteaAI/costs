@@ -102,6 +102,24 @@ def replace_entries(entries: list, source_id: str) -> dict:
     return counts
 
 
+def clear_entries() -> dict:
+    """Non-destructive-to-guard wipe: delete every row, insert nothing.
+
+    Used for the `custom` source, where an empty table is the correct outcome
+    rather than a failure. Returns {deleted, inserted} for the same counts
+    shape as `replace_entries`.
+    """
+    from tools import db
+    from ..models.model_price import ModelPrice
+
+    with db.with_project_schema_session(None) as session:
+        deleted = session.query(ModelPrice).delete()
+        session.commit()
+    counts = {"deleted": deleted, "inserted": 0}
+    log.info("costs.catalog: cleared -> %s", counts)
+    return counts
+
+
 def set_custom_price(model_name: str, values: dict):
     """Create or overwrite a custom (admin) price for a model.
 

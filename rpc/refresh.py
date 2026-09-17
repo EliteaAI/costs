@@ -16,6 +16,11 @@ class RPC:
     @web.rpc("costs_refresh_catalog", "refresh_catalog")
     def refresh_catalog(self, source_id: str = None, **kwargs) -> dict:
         source_id = source_id or settings.get_active_source()
+
+        if source_id == "custom":
+            # No upstream catalog to refresh from; the scheduled refresh is a no-op.
+            return {"source": "custom", "counts": None, "cached": cache.count()}
+
         source = registry.get(source_id)
 
         entries = []
@@ -52,6 +57,15 @@ class RPC:
         failed fetch can never empty the catalog.
         """
         source_id = source_id or settings.get_active_source()
+
+        if source_id == "custom":
+            # No upstream catalog: clear the table instead of fetch+replace.
+            counts = catalog.clear_entries()
+            cache.reload()
+            result = {"source": "custom", "counts": counts, "cached": cache.count()}
+            log.info("costs.reimport: done %s", result)
+            return result
+
         source = registry.get(source_id)
         if source is None:
             return {"error": "unknown_source", "source": source_id, "cached": cache.count()}

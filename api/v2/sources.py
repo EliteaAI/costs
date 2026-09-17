@@ -21,7 +21,7 @@ _VIEW_ROLES = {c.ADMINISTRATION_MODE: {"admin": True, "viewer": True, "editor": 
 _WRITE_ROLES = {c.ADMINISTRATION_MODE: {"admin": True, "viewer": False, "editor": True}}
 
 # Sources selectable from the admin UI (kept intentionally narrow).
-_SELECTABLE_SOURCES = ("litellm", "azure_foundry", "bedrock")
+_SELECTABLE_SOURCES = ("litellm", "azure_foundry", "bedrock", "custom")
 
 
 class AdminAPI(api_tools.APIModeHandler):
