@@ -12,6 +12,7 @@ generic; it is not a LiteLLM dependency.
 import threading
 
 from pylon.core.tools import log
+from .routing_prices import projection, snapshot
 
 # Provider prefixes stripped when the exact model_name isn't found. Region
 # prefixes (us./eu./apac./ca.) are the Bedrock inference-profile convention.
@@ -36,6 +37,7 @@ def _price_dict(row) -> dict:
         "cache_read_input_token_cost": _f(row.cache_read_input_token_cost),
         "cache_creation_input_token_cost": _f(row.cache_creation_input_token_cost),
         "is_custom": row.is_custom,
+        "routing_price": projection(row),
     }
 
 
@@ -103,6 +105,13 @@ def get_price(model_name: str):
 def all_prices() -> dict:
     _ensure_loaded()
     return dict(_by_name)
+
+
+def routing_prices(model_names):
+    """One immutable-by-copy snapshot; exact names preserve regional prices."""
+    _ensure_loaded()
+    current = _by_name
+    return snapshot(model_names, current)
 
 
 def count() -> int:
