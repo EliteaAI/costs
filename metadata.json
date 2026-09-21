@@ -1,6 +1,6 @@
 {
   "name": "costs",
-  "version": "0.4",
+  "version": "0.5",
   "module": "plugins.costs",
   "depends_on": [
     "shared"
