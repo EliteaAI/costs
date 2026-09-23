@@ -24,7 +24,7 @@ def normalize_entry(key: str, raw: dict) -> CanonicalEntry:
         provider=raw.get("litellm_provider"),
         mode=raw.get("mode"),
         input_cost_per_token=raw.get("input_cost_per_token"),
-        output_cost_per_token=raw.get("output_cost_per_token"),
+        output_cost_per_token=_output_price(raw),
         cache_read_input_token_cost=raw.get("cache_read_input_token_cost"),
         cache_creation_input_token_cost=raw.get("cache_creation_input_token_cost"),
         max_input_tokens=_as_int(raw.get("max_input_tokens")),
@@ -36,13 +36,29 @@ def normalize_entry(key: str, raw: dict) -> CanonicalEntry:
     )
 
 
+def _output_price(raw: dict):
+    # Image models price output under a separate key; same per-token unit as chat
+    price = raw.get("output_cost_per_token")
+    if price is None and raw.get("mode") == "image_generation":
+        price = raw.get("output_cost_per_image_token")
+    return price
+
+
 def normalize_catalog(catalog: dict) -> list:
     """Map a full LiteLLM catalog dict into canonical entries (drops sample_spec)."""
     entries = []
+    unpriced_images = []
     for key, raw in catalog.items():
         if key == "sample_spec" or not isinstance(raw, dict):
             continue
-        entries.append(normalize_entry(key, raw))
+        entry = normalize_entry(key, raw)
+        if entry.mode == "image_generation" and entry.output_cost_per_token is None \
+                and entry.input_cost_per_token is not None:
+            unpriced_images.append(key)
+        entries.append(entry)
+    if unpriced_images:
+        log.warning("costs.litellm: %d image models have no per-token output price: %s",
+                    len(unpriced_images), ", ".join(unpriced_images[:20]))
     return entries
 
 
