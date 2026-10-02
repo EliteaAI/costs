@@ -57,7 +57,6 @@ class Module(module.ModuleModel):
                 "recommended_roles": {
                     "administration": {"super_admin": True, "admin": True, "viewer": action == "view", "editor": True},
                     "default": {"super_admin": True, "admin": True, "viewer": action == "view", "editor": True},
-                    "developer": {"super_admin": True, "admin": True, "viewer": action == "view", "editor": True},
                 },
             })
 
