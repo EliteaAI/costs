@@ -12,18 +12,12 @@ generic; it is not a LiteLLM dependency.
 import threading
 
 from pylon.core.tools import log
-from .routing_prices import projection, snapshot
-
-# Provider prefixes stripped when the exact model_name isn't found. Region
-# prefixes (us./eu./apac./ca.) are the Bedrock inference-profile convention.
-_STRIP_PREFIXES = (
-    "openai/", "azure/", "anthropic/", "bedrock/", "vertex_ai/", "gemini/",
-    "us.", "eu.", "apac.", "ca.",
-)
+from .routing_prices import build_family_index, projection, resolve_name, snapshot
 
 _lock = threading.Lock()
 _by_name = None      # {model_name: price_dict}
 _alias_index = None  # {alias: model_name}
+_family_index = None  # {family_key: [model_name]} for alias-labelled routing fallback
 _loaded = False
 
 
@@ -55,25 +49,25 @@ def _build():
                 if alias:
                     alias_index[alias] = row.model_name
     log.info("costs.cache: loaded %d models", len(by_name))
-    return by_name, alias_index
+    return by_name, alias_index, build_family_index(by_name, alias_index)
 
 
 def _ensure_loaded():
-    global _by_name, _alias_index, _loaded
+    global _by_name, _alias_index, _family_index, _loaded
     if _loaded:
         return
     with _lock:
         if _loaded:
             return
-        _by_name, _alias_index = _build()
+        _by_name, _alias_index, _family_index = _build()
         _loaded = True
 
 
 def reload():
     """Invalidate and rebuild the cache from the DB."""
-    global _by_name, _alias_index, _loaded
+    global _by_name, _alias_index, _family_index, _loaded
     with _lock:
-        _by_name, _alias_index = _build()
+        _by_name, _alias_index, _family_index = _build()
         _loaded = True
 
 
@@ -82,24 +76,8 @@ def get_price(model_name: str):
     if not model_name:
         return None
     _ensure_loaded()
-    if model_name in _by_name:
-        return _by_name[model_name]
-    lowered = model_name.lower()
-    if lowered in _by_name:
-        return _by_name[lowered]
-    for prefix in _STRIP_PREFIXES:
-        if model_name.startswith(prefix):
-            stripped = model_name[len(prefix):]
-            if stripped in _by_name:
-                return _by_name[stripped]
-        if lowered.startswith(prefix):
-            stripped = lowered[len(prefix):]
-            if stripped in _by_name:
-                return _by_name[stripped]
-    resolved = _alias_index.get(model_name) or _alias_index.get(lowered)
-    if resolved:
-        return _by_name.get(resolved)
-    return None
+    key = resolve_name(model_name, _by_name, _alias_index)
+    return _by_name[key] if key is not None else None
 
 
 def all_prices() -> dict:
@@ -107,11 +85,14 @@ def all_prices() -> dict:
     return dict(_by_name)
 
 
-def routing_prices(model_names):
-    """One immutable-by-copy snapshot; exact names preserve regional prices."""
+def routing_prices(model_names, canonical_by_name=None):
+    """One immutable-by-copy snapshot; exact names preserve regional prices.
+
+    Exact always wins. Only when the caller supplies `canonical_by_name` may a missing name be
+    filled from an alias, and the entry is then labelled `match: 'alias'`."""
     _ensure_loaded()
-    current = _by_name
-    return snapshot(model_names, current)
+    current, aliases, families = _by_name, _alias_index, _family_index
+    return snapshot(model_names, current, canonical_by_name, aliases, families)
 
 
 def count() -> int:
