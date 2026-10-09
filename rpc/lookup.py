@@ -9,8 +9,8 @@ from ..utils import cache, pricing
 
 class RPC:
     @web.rpc("costs_get_routing_prices")
-    def get_routing_prices(self, model_names: list[str], **kwargs):
-        return cache.routing_prices(model_names)
+    def get_routing_prices(self, model_names: list[str], canonical_by_name: dict | None = None, **kwargs):
+        return cache.routing_prices(model_names, canonical_by_name)
 
     @web.rpc("costs_get_model_price", "get_model_price")
     def get_model_price(self, model_name: str, **kwargs):
