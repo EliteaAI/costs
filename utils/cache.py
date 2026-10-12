@@ -5,19 +5,22 @@ a CRUD write or a catalog refresh). Double-checked locking mirrors the engine
 cache in `elitea_core/utils/application_tools.py`.
 
 Lookup mirrors the legacy `model_pricing._lookup`: exact -> lowercase -> strip
-common provider prefixes, then fall back to per-entry aliases. This matching is
-generic; it is not a LiteLLM dependency.
+common provider prefixes, then fall back to per-entry aliases. As a last resort a
+bare name matches prefixed catalog keys (e.g. `azure/X` for `X`) when all of them
+agree on price. This matching is generic; it is not a LiteLLM dependency.
 """
 
 import threading
 
 from pylon.core.tools import log
-from .routing_prices import build_family_index, projection, resolve_name, snapshot
+from .routing_prices import STRIP_PREFIXES, build_family_index, projection, resolve_name, snapshot
 
 _lock = threading.Lock()
 _by_name = None      # {model_name: price_dict}
 _alias_index = None  # {alias: model_name}
 _family_index = None  # {family_key: [model_name]} for alias-labelled routing fallback
+_stripped_index = None  # {bare_name: [prefixed model_name, ...]}
+_ambiguous_warned = set()
 _loaded = False
 
 
@@ -41,6 +44,7 @@ def _build():
 
     by_name = {}
     alias_index = {}
+    stripped_index = {}
     with db.with_project_schema_session(None) as session:
         for row in session.query(ModelPrice).all():
             pd = _price_dict(row)
@@ -48,26 +52,31 @@ def _build():
             for alias in (row.aliases or []):
                 if alias:
                     alias_index[alias] = row.model_name
+            for prefix in STRIP_PREFIXES:
+                if row.model_name.startswith(prefix):
+                    bare = row.model_name[len(prefix):]
+                    for key in {bare, bare.lower()}:
+                        stripped_index.setdefault(key, []).append(row.model_name)
     log.info("costs.cache: loaded %d models", len(by_name))
-    return by_name, alias_index, build_family_index(by_name, alias_index)
+    return by_name, alias_index, build_family_index(by_name, alias_index), stripped_index
 
 
 def _ensure_loaded():
-    global _by_name, _alias_index, _family_index, _loaded
+    global _by_name, _alias_index, _family_index, _stripped_index, _loaded
     if _loaded:
         return
     with _lock:
         if _loaded:
             return
-        _by_name, _alias_index, _family_index = _build()
+        _by_name, _alias_index, _family_index, _stripped_index = _build()
         _loaded = True
 
 
 def reload():
     """Invalidate and rebuild the cache from the DB."""
-    global _by_name, _alias_index, _family_index, _loaded
+    global _by_name, _alias_index, _family_index, _stripped_index, _loaded
     with _lock:
-        _by_name, _alias_index, _family_index = _build()
+        _by_name, _alias_index, _family_index, _stripped_index = _build()
         _loaded = True
 
 
@@ -77,7 +86,37 @@ def get_price(model_name: str):
         return None
     _ensure_loaded()
     key = resolve_name(model_name, _by_name, _alias_index)
-    return _by_name[key] if key is not None else None
+    if key is not None:
+        return _by_name[key]
+    return _prefixed_price(model_name, model_name.lower())
+
+
+def _prefixed_price(model_name: str, lowered: str):
+    """Price a bare name by its prefixed catalog keys, only if they agree."""
+    candidates = sorted(set(
+        _stripped_index.get(model_name, []) + _stripped_index.get(lowered, [])
+    ))
+    if not candidates:
+        return None
+    prices = [_by_name[name] for name in candidates]
+    if len({_price_key(pd) for pd in prices}) == 1:
+        return prices[0]
+    if model_name not in _ambiguous_warned:
+        _ambiguous_warned.add(model_name)
+        log.warning(
+            "costs.cache: %s matches prefixed entries with different prices %s; not pricing",
+            model_name, candidates,
+        )
+    return None
+
+
+def _price_key(pd: dict) -> tuple:
+    return (
+        pd["input_cost_per_token"],
+        pd["output_cost_per_token"],
+        pd["cache_read_input_token_cost"],
+        pd["cache_creation_input_token_cost"],
+    )
 
 
 def all_prices() -> dict:

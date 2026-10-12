@@ -1,0 +1,18 @@
+{
+  "$schema": "https://elitea.ai/admin-config-schema/v1",
+  "plugin": "costs",
+  "properties": {
+    "costs_tool_pricing_tavily_usd_per_credit": {
+      "type": "number",
+      "title": "Tavily: USD per credit",
+      "description": "Price of one Tavily API credit. Tool spend rows are priced as credits × this rate.",
+      "path": "tool_pricing.tavily.usd_per_credit",
+      "section": "tool_pricing",
+      "backend": "tavily",
+      "default": 0.008,
+      "minimum": 0,
+      "requires_restart": false,
+      "value_schema": {"type": "number", "exclusiveMinimum": 0}
+    }
+  }
+}
