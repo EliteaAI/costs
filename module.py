@@ -47,6 +47,9 @@ class Module(module.ModuleModel):
     def deinit(self):
         log.info("De-initializing costs plugin")
 
+    def reconfig(self):
+        """ Tool prices are read from descriptor.config on every call """
+
     # -- internals -----------------------------------------------------------
 
     @staticmethod
