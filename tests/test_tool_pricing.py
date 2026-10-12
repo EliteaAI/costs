@@ -38,6 +38,11 @@ class ToolPricingTest(unittest.TestCase):
     def test_zero_units_cost_zero(self):
         self.assertEqual(tp.compute_tool_cost(self.cfg, "tavily", 0, "credit")["cost"], 0.0)
 
+    def test_units_can_never_lower_cost(self):
+        for units in (-100, -0.0001, float("nan"), float("inf"), "5", True, None):
+            with self.assertRaises(ValueError):
+                tp.compute_tool_cost(self.cfg, "tavily", units, "credit")
+
     def test_schema_default_matches_config(self):
         schema = json.loads((root/'admin_schema.json').read_text())["properties"]
         cfg = yaml.safe_load((root/'config.yml').read_text())
