@@ -1,0 +1,3 @@
+tool_pricing:
+  tavily:
+    usd_per_credit: 0.008

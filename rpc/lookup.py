@@ -4,7 +4,7 @@ consumers (M5). Served entirely from the in-memory cache.
 
 from pylon.core.tools import web
 
-from ..utils import cache, pricing
+from ..utils import cache, pricing, tool_pricing
 
 
 class RPC:
@@ -32,3 +32,8 @@ class RPC:
             cache_read_input_tokens, cache_creation_input_tokens,
         )
         return {"cost": cost, "cost_source": tag, "breakdown": breakdown}
+
+    @web.rpc("costs_compute_tool_cost")
+    def compute_tool_cost(self, backend, units, unit, **kwargs):
+        # Live config read: admin edits apply without a restart.
+        return tool_pricing.compute_tool_cost(self.descriptor.config, backend, units, unit)
