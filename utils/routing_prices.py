@@ -66,6 +66,25 @@ def build_family_index(by_name, alias_index):
     return {family: sorted(names) for family, names in index.items()}
 
 
+def build_stripped_index(by_name):
+    """{bare_name: [prefixed catalog names]} for every provider-prefixed row (bare and lowercased)."""
+    index = {}
+    for model_name in by_name:
+        for prefix in STRIP_PREFIXES:
+            if model_name.startswith(prefix):
+                bare = model_name[len(prefix):]
+                for key in {bare, bare.lower()}:
+                    index.setdefault(key, []).append(model_name)
+    return index
+
+
+def prefixed_match(name, by_name, stripped_index):
+    """Catalog key of a prefixed row for a bare `name`, only when every such row agrees on the four rates."""
+    candidates = sorted(set(stripped_index.get(name, []) + stripped_index.get(name.lower(), [])))
+    rates = {tuple((by_name[key].get('routing_price') or {}).get(rate) for rate in RATES) for key in candidates}
+    return candidates[0] if candidates and len(rates) == 1 else None
+
+
 def _check_canonical(canonical_by_name):
     if canonical_by_name is None:
         return
@@ -75,9 +94,12 @@ def _check_canonical(canonical_by_name):
         raise ValueError('canonical_by_name must map at most 64 model names to canonical identities')
 
 
-def _alias_fallback(name, canonical, by_name, alias_index, family_index):
+def _alias_fallback(name, canonical, by_name, alias_index, family_index, stripped_index):
     """Catalog key for a missing exact name, or None. An ambiguous family never guesses."""
     hit = resolve_name(name, by_name, alias_index)
+    if hit is not None:
+        return hit
+    hit = prefixed_match(name, by_name, stripped_index)
     if hit is not None:
         return hit
     family = family_key(canonical.rsplit('/', 1)[-1])
@@ -85,7 +107,7 @@ def _alias_fallback(name, canonical, by_name, alias_index, family_index):
     return candidates[0] if len(candidates) == 1 else None
 
 
-def snapshot(model_names, by_name, canonical_by_name=None, alias_index=None, family_index=None):
+def snapshot(model_names, by_name, canonical_by_name=None, alias_index=None, family_index=None, stripped_index=None):
     """Exact-name snapshot. Exact always wins; with `canonical_by_name` a missing name may be filled
     from an alias and is then labelled `match: 'alias'` with the catalog row it came from."""
     if (not isinstance(model_names, list) or len(model_names) > 64
@@ -105,7 +127,10 @@ def snapshot(model_names, by_name, canonical_by_name=None, alias_index=None, fam
         elif canonical_by_name is not None and name in canonical_by_name:
             if family_index is None:
                 family_index = build_family_index(by_name, alias_index)
-            matched = _alias_fallback(name, canonical_by_name[name], by_name, alias_index, family_index)
+            if stripped_index is None:
+                stripped_index = build_stripped_index(by_name)
+            matched = _alias_fallback(name, canonical_by_name[name], by_name, alias_index, family_index,
+                                      stripped_index)
             value = (by_name.get(matched) or {}).get('routing_price') if matched else None
             if value is not None:
                 value = copy.deepcopy(value)

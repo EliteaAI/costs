@@ -169,6 +169,56 @@ class TestAliasFallback(unittest.TestCase):
         self.assertNotEqual(prices.snapshot(list(self.CANON), source, self.CANON)['revision'], first)
 
 
+class TestPrefixedFallback(unittest.TestCase):
+    NAME = 'gpt-5.6-luna-2026-07-09'
+    CANON = {NAME: 'openai/gpt-5-6-luna'}
+
+    def test_bare_name_priced_from_prefixed_row(self):
+        source = catalog('azure/' + self.NAME)
+        result = prices.snapshot([self.NAME], source, self.CANON)
+        entry = result['entries'][0]
+        self.assertEqual((entry['model_name'], entry['match'], entry['matched_name']),
+                         (self.NAME, 'alias', 'azure/' + self.NAME))
+        self.assertEqual(result['missing'], [])
+
+    def test_prefixed_row_wins_over_ambiguous_family(self):
+        source = catalog('azure/' + self.NAME, 'global.openai.gpt-5.6-luna', 'openai/gpt-5.6-luna')
+        source['global.openai.gpt-5.6-luna']['routing_price']['output_cost_per_token'] = '0.5'
+        result = prices.snapshot([self.NAME], source, self.CANON)
+        self.assertEqual(result['entries'][0]['matched_name'], 'azure/' + self.NAME)
+
+    def test_agreeing_prefixed_rows_price_deterministically(self):
+        source = catalog('openai/' + self.NAME, 'azure/' + self.NAME)
+        result = prices.snapshot([self.NAME], source, self.CANON)
+        self.assertEqual(result['entries'][0]['matched_name'], 'azure/' + self.NAME)
+
+    def test_disagreeing_prefixed_rows_stay_missing(self):
+        source = catalog('openai/' + self.NAME, 'azure/' + self.NAME)
+        source['azure/' + self.NAME]['routing_price']['output_cost_per_token'] = '0.5'
+        result = prices.snapshot([self.NAME], source, self.CANON)
+        self.assertEqual((result['entries'], result['missing']), ([], [self.NAME]))
+
+    def test_cache_supplied_index_is_used(self):
+        source = catalog('azure/' + self.NAME)
+        index = {self.NAME: ['azure/' + self.NAME]}
+        result = prices.snapshot([self.NAME], source, self.CANON, stripped_index=index)
+        self.assertEqual(result['entries'][0]['matched_name'], 'azure/' + self.NAME)
+
+    def test_exact_still_wins(self):
+        source = catalog(self.NAME, 'azure/' + self.NAME)
+        source[self.NAME]['routing_price']['output_cost_per_token'] = '0.5'
+        entry = prices.snapshot([self.NAME], source, self.CANON)['entries'][0]
+        self.assertEqual((entry['match'], entry['output_cost_per_token']), ('exact', '0.5'))
+
+    def test_old_signature_does_not_use_prefixed_rows(self):
+        result = prices.snapshot([self.NAME], catalog('azure/' + self.NAME))
+        self.assertEqual((result['entries'], result['missing']), ([], [self.NAME]))
+
+    def test_name_without_canonical_is_not_prefixed_matched(self):
+        result = prices.snapshot([self.NAME], catalog('azure/' + self.NAME), {})
+        self.assertEqual(result['missing'], [self.NAME])
+
+
 class TestResolveName(unittest.TestCase):
     """Shared with cache.get_price: behaviour must stay exactly what get_price did."""
 

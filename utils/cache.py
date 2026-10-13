@@ -13,7 +13,7 @@ agree on price. This matching is generic; it is not a LiteLLM dependency.
 import threading
 
 from pylon.core.tools import log
-from .routing_prices import STRIP_PREFIXES, build_family_index, projection, resolve_name, snapshot
+from .routing_prices import build_family_index, build_stripped_index, projection, resolve_name, snapshot
 
 _lock = threading.Lock()
 _by_name = None      # {model_name: price_dict}
@@ -44,7 +44,6 @@ def _build():
 
     by_name = {}
     alias_index = {}
-    stripped_index = {}
     with db.with_project_schema_session(None) as session:
         for row in session.query(ModelPrice).all():
             pd = _price_dict(row)
@@ -52,13 +51,8 @@ def _build():
             for alias in (row.aliases or []):
                 if alias:
                     alias_index[alias] = row.model_name
-            for prefix in STRIP_PREFIXES:
-                if row.model_name.startswith(prefix):
-                    bare = row.model_name[len(prefix):]
-                    for key in {bare, bare.lower()}:
-                        stripped_index.setdefault(key, []).append(row.model_name)
     log.info("costs.cache: loaded %d models", len(by_name))
-    return by_name, alias_index, build_family_index(by_name, alias_index), stripped_index
+    return by_name, alias_index, build_family_index(by_name, alias_index), build_stripped_index(by_name)
 
 
 def _ensure_loaded():
@@ -130,8 +124,8 @@ def routing_prices(model_names, canonical_by_name=None):
     Exact always wins. Only when the caller supplies `canonical_by_name` may a missing name be
     filled from an alias, and the entry is then labelled `match: 'alias'`."""
     _ensure_loaded()
-    current, aliases, families = _by_name, _alias_index, _family_index
-    return snapshot(model_names, current, canonical_by_name, aliases, families)
+    current, aliases, families, stripped = _by_name, _alias_index, _family_index, _stripped_index
+    return snapshot(model_names, current, canonical_by_name, aliases, families, stripped)
 
 
 def count() -> int:
